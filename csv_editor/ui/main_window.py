@@ -1,4 +1,3 @@
-# main_window.py
 import json
 import sys
 from PyQt5.QtWidgets import (QMainWindow, QTableView, QToolBar, QAction, 
@@ -84,19 +83,42 @@ class MainWindow(QMainWindow):
     
     def create_actions(self):
         """Создание действий для меню и тулбаров"""
-        # Действия для файловых операций
-        self.open_action = QAction("&Open...", self)
+        # File Actions
+        self.open_action = QAction(QIcon.fromTheme("document-open"), "&Open...", self)
         self.open_action.setShortcut("Ctrl+O")
         self.open_action.triggered.connect(self.open_file)
         
-        self.save_action = QAction("&Save", self)
+        self.save_action = QAction(QIcon.fromTheme("document-save"), "&Save", self)
         self.save_action.setShortcut("Ctrl+S")
         self.save_action.triggered.connect(self.save_file)
         
         self.save_as_action = QAction("Save &As...", self)
         self.save_as_action.triggered.connect(self.save_file_as)
         
-        # Действия для отмены/повтора
+        # Import Actions
+        self.import_csv_action = QAction("From CSV", self)
+        self.import_csv_action.triggered.connect(lambda: self.open_file('csv'))
+        
+        self.import_excel_action = QAction("From Excel", self)
+        self.import_excel_action.triggered.connect(self.import_excel)
+        
+        self.import_sqlite_action = QAction("From SQLite", self)
+        self.import_sqlite_action.triggered.connect(self.import_sqlite)
+        
+        # Export Actions
+        self.export_csv_action = QAction("To CSV", self)
+        self.export_csv_action.triggered.connect(lambda: self.save_file('csv'))
+        
+        self.export_excel_action = QAction("To Excel", self)
+        self.export_excel_action.triggered.connect(self.export_to_excel)
+        
+        self.export_sqlite_action = QAction("To SQLite", self)
+        self.export_sqlite_action.triggered.connect(self.export_sqlite)
+        
+        self.export_md_action = QAction("To Markdown", self)
+        self.export_md_action.triggered.connect(self.export_markdown)
+        
+        # Edit Actions
         self.undo_action = QAction("&Undo", self)
         self.undo_action.setShortcut("Ctrl+Z")
         self.undo_action.triggered.connect(self.undo_stack.undo)
@@ -104,24 +126,62 @@ class MainWindow(QMainWindow):
         self.redo_action = QAction("&Redo", self)
         self.redo_action.setShortcut("Ctrl+Y")
         self.redo_action.triggered.connect(self.undo_stack.redo)
+        
+        # Data Actions
+        self.group_action = QAction("Group Data", self)
+        self.group_action.triggered.connect(self.show_group_dialog)
+        
+        # History Actions
+        self.show_history_action = QAction("Show History", self)
+        self.show_history_action.triggered.connect(self.show_history)
+        
+        # Tools Actions
+        self.compare_tables_action = QAction("Compare Tables", self)
+        self.compare_tables_action.triggered.connect(self.compare_tables)
     
     def create_menus(self):
         """Создание меню"""
         menubar = self.menuBar()
         
-        # Меню File
+        # File Menu
         file_menu = menubar.addMenu("&File")
         file_menu.addAction(self.open_action)
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.save_as_action)
         
-        # Меню Edit
+        # Import Submenu
+        import_menu = file_menu.addMenu("&Import")
+        import_menu.addAction(self.import_csv_action)
+        import_menu.addAction(self.import_excel_action)
+        import_menu.addAction(self.import_sqlite_action)
+        
+        # Export Submenu
+        export_menu = file_menu.addMenu("&Export")
+        export_menu.addAction(self.export_csv_action)
+        export_menu.addAction(self.export_excel_action)
+        export_menu.addAction(self.export_sqlite_action)
+        export_menu.addAction(self.export_md_action)
+        
+        # Edit Menu
         edit_menu = menubar.addMenu("&Edit")
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
+        
+        # Data Menu
+        data_menu = menubar.addMenu("&Data")
+        data_menu.addAction(self.group_action)
+        
+        # History Menu
+        history_menu = menubar.addMenu("&History")
+        history_menu.addAction(self.show_history_action)
+        
+        # Tools Menu
+        tools_menu = menubar.addMenu("&Tools")
+        tools_menu.addAction(self.compare_tables_action)
     
     def create_toolbars(self):
         """Создание панелей инструментов"""
+        # Main Toolbar
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
         
@@ -137,24 +197,27 @@ class MainWindow(QMainWindow):
         self.view.setItemDelegateForColumn(2, self.multi_line_delegate)
     
     # Основные методы работы с файлами
-    def open_file(self):
-        """Открытие файла"""
-        if self.file_io.open_file(self):
+    def open_file(self, file_type=None):
+        """Открытие файла с учетом типа"""
+        if self.file_io.open_file(self, file_type):
             self.status_bar.showMessage(f"Opened: {self.file_io.current_file}", 3000)
+            self.history.take_snapshot(f"Opened file: {self.file_io.current_file}")
     
-    def save_file(self):
+    def save_file(self, file_type=None):
         """Сохранение файла"""
-        if self.file_io.save_file(self, self.get_model_data()):
+        if self.file_io.save_file(self, self.get_model_data(), file_type):
             self.undo_stack.setClean()
             self.status_bar.showMessage(f"Saved: {self.file_io.current_file}", 3000)
+            self.history.take_snapshot(f"Saved file: {self.file_io.current_file}")
             return True
         return False
     
-    def save_file_as(self):
+    def save_file_as(self, file_type=None):
         """Сохранение файла с выбором имени"""
-        if self.file_io.save_file_as(self, self.get_model_data()):
+        if self.file_io.save_file_as(self, self.get_model_data(), file_type):
             self.undo_stack.setClean()
             self.status_bar.showMessage(f"Saved as: {self.file_io.current_file}", 3000)
+            self.history.take_snapshot(f"Saved file as: {self.file_io.current_file}")
             return True
         return False
     
@@ -183,6 +246,82 @@ class MainWindow(QMainWindow):
             for col_idx, value in enumerate(row):
                 item = QStandardItem(str(value) if value is not None else "")
                 self.model.setItem(row_idx, col_idx, item)
+    
+    # Импорт/экспорт
+    def import_excel(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import Excel", "", "Excel Files (*.xlsx)"
+        )
+        if filename and self.file_io.import_excel(filename):
+            self.status_bar.showMessage(f"Imported from Excel: {filename}", 3000)
+            self.history.take_snapshot(f"Imported from Excel: {filename}")
+    
+    def export_to_excel(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Excel", "", "Excel Files (*.xlsx)"
+        )
+        if filename and self.excel_exporter.export(filename):
+            self.status_bar.showMessage(f"Exported to Excel: {filename}", 3000)
+    
+    def export_markdown(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Markdown", "", "Markdown Files (*.md)"
+        )
+        if filename:
+            # Реализация экспорта в Markdown
+            pass
+    
+    def import_sqlite(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import SQLite", "", "SQLite Databases (*.db *.sqlite)"
+        )
+        if filename:
+            table_name, ok = QInputDialog.getText(
+                self, "Select Table", "Enter table name:"
+            )
+            if ok and table_name and self.file_io.import_sqlite(filename, table_name):
+                self.status_bar.showMessage(f"Imported from SQLite: {table_name}", 3000)
+                self.history.take_snapshot(f"Imported from SQLite: {table_name}")
+    
+    def export_sqlite(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export SQLite", "", "SQLite Databases (*.db *.sqlite)"
+        )
+        if filename:
+            table_name, ok = QInputDialog.getText(
+                self, "Table Name", "Enter table name for export:"
+            )
+            if ok and table_name and self.file_io.export_sqlite(filename, table_name):
+                self.status_bar.showMessage(f"Exported to SQLite: {table_name}", 3000)
+    
+    # Диалоги и специальные функции
+    def show_group_dialog(self):
+        headers = [self.model.headerData(col, Qt.Horizontal) or f"Column {col}" 
+                  for col in range(self.model.columnCount())]
+        dialog = GroupDialog(headers, self)
+        if dialog.exec_():
+            selections = dialog.get_selections()
+            result = self.data_ops.group_data(
+                selections['group_column'],
+                selections['aggregations']
+            )
+            QMessageBox.information(
+                self, 
+                "Grouping Result", 
+                f"Data grouped by {selections['group_column']}\nFound {len(result)} groups"
+            )
+    
+    def show_history(self):
+        dialog = HistoryBrowserDialog(self.history, self)
+        if dialog.exec_():
+            selected = dialog.get_selected_snapshot()
+            self.history.restore_snapshot(selected)
+    
+    def compare_tables(self):
+        dialog = TableComparisonDialog(self.model, self)
+        if dialog.exec_():
+            # Обработка результатов сравнения
+            pass
     
     # Обработчики событий
     def closeEvent(self, event):
@@ -218,6 +357,15 @@ class MainWindow(QMainWindow):
         """Обновление состояния undo/redo"""
         self.undo_action.setEnabled(self.undo_stack.canUndo())
         self.redo_action.setEnabled(self.undo_stack.canRedo())
+        if self.undo_stack.canUndo():
+            self.undo_action.setText(f"Undo ({self.undo_stack.undoText()})")
+        else:
+            self.undo_action.setText("Undo")
+        
+        if self.undo_stack.canRedo():
+            self.redo_action.setText(f"Redo ({self.undo_stack.redoText()})")
+        else:
+            self.redo_action.setText("Redo")
     
     def autosave(self):
         """Автоматическое сохранение"""
