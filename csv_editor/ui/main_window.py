@@ -1,14 +1,13 @@
+# main_window.py
 import json
 import sys
-
-# Импорты PyQt5
 from PyQt5.QtWidgets import (QMainWindow, QTableView, QToolBar, QAction, 
-                            QStatusBar, QMenuBar, QFileDialog, QMessageBox,
+                            QStatusBar, QFileDialog, QMessageBox,
                             QInputDialog, QUndoStack)
 from PyQt5.QtGui import QIcon, QStandardItem
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 
-# Абсолютные импорты из вашего пакета csv_editor
+# Импорты из вашего пакета
 from csv_editor.core.models.csv_table_model import UndoableStandardItemModel
 from csv_editor.core.models.proxy_model import MySortFilterProxyModel
 from csv_editor.core.controllers.file_io import FileIOController
@@ -16,14 +15,10 @@ from csv_editor.core.controllers.history import HistoryController
 from csv_editor.core.controllers.data_operations import DataOperationsController
 from csv_editor.core.utils.audit_log import AuditLogger
 from csv_editor.core.utils.exporters.excel import ExcelExporter
-
-# Импорты UI-компонентов
-from csv_editor.ui.dialogs.settings import SettingsDialog
+from csv_editor.ui.dialogs.group_dialog import GroupDialog
 from csv_editor.ui.dialogs.history_browser import HistoryBrowserDialog
 from csv_editor.ui.dialogs.comparison import TableComparisonDialog
-from csv_editor.ui.dialogs.group_dialog import GroupDialog
 from csv_editor.ui.delegates import MultiLineDelegate
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -31,269 +26,205 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Advanced CSV Editor")
         self.resize(1000, 600)
         
-        # Инициализация компонентов
-        self.init_models()
-        self.init_controllers()
+        # Инициализация основных компонентов
+        self.undo_stack = QUndoStack(self)
+        self.model = UndoableStandardItemModel(0, 0, parent=self)
+        self.model.undo_stack = self.undo_stack
+        
+        # Инициализация UI
         self.init_ui()
+        self.init_controllers()
         self.init_connections()
         
-        # Загрузка настроек
-        self.load_settings()
+        # Настройка автосохранения
+        self.setup_autosave()
         
-        # Таймер автосохранения
-        self.autosave_timer = QTimer(self)
-        self.autosave_timer.timeout.connect(self.autosave)
-        self.autosave_timer.start(300000)  # 5 минут
-    
-    def init_models(self):
-        self.undo_stack = QUndoStack(self)
-        self.model = UndoableStandardItemModel(0, 0, self, self.undo_stack)
+    def init_ui(self):
+        """Инициализация пользовательского интерфейса"""
+        # Основная таблица
         self.proxy_model = MySortFilterProxyModel(self)
         self.proxy_model.setSourceModel(self.model)
-    
-    def init_controllers(self):
-        self.file_io = FileIOController(self.model)
-        self.history = HistoryController(self.model, self.undo_stack)  # Передаем model
-        self.data_ops = DataOperationsController(self.model, self.undo_stack)
-        self.audit_log = AuditLogger()
-        self.excel_exporter = ExcelExporter(self.model)  # Инициализация экспортера
-    
-    def init_ui(self):
-        # Создание виджетов
+        
         self.view = QTableView()
         self.view.setModel(self.proxy_model)
         self.setCentralWidget(self.view)
         
-        # Создание меню и панели инструментов
-        self.create_menus()
-        self.create_toolbars()
+        # Статус бар
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         
-        # Настройка делегатов
+        # Меню и тулбары
+        self.create_actions()
+        self.create_menus()
+        self.create_toolbars()
+        
+        # Делегаты
         self.setup_delegates()
     
+    def init_controllers(self):
+        """Инициализация контроллеров"""
+        self.file_io = FileIOController(parent=self)
+        self.file_io.file_loaded.connect(self.load_data)
+        
+        self.history = HistoryController(self.model, self.undo_stack)
+        self.data_ops = DataOperationsController(self.model, self.undo_stack)
+        self.audit_log = AuditLogger()
+        self.excel_exporter = ExcelExporter(self.model)
+    
+    def init_connections(self):
+        """Настройка сигналов и слотов"""
+        self.model.dataChanged.connect(self.on_data_changed)
+        self.undo_stack.indexChanged.connect(self.on_undo_stack_changed)
+    
+    def setup_autosave(self):
+        """Настройка таймера автосохранения"""
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.timeout.connect(self.autosave)
+        self.autosave_timer.start(300000)  # 5 минут
+    
+    def create_actions(self):
+        """Создание действий для меню и тулбаров"""
+        # Действия для файловых операций
+        self.open_action = QAction("&Open...", self)
+        self.open_action.setShortcut("Ctrl+O")
+        self.open_action.triggered.connect(self.open_file)
+        
+        self.save_action = QAction("&Save", self)
+        self.save_action.setShortcut("Ctrl+S")
+        self.save_action.triggered.connect(self.save_file)
+        
+        self.save_as_action = QAction("Save &As...", self)
+        self.save_as_action.triggered.connect(self.save_file_as)
+        
+        # Действия для отмены/повтора
+        self.undo_action = QAction("&Undo", self)
+        self.undo_action.setShortcut("Ctrl+Z")
+        self.undo_action.triggered.connect(self.undo_stack.undo)
+        
+        self.redo_action = QAction("&Redo", self)
+        self.redo_action.setShortcut("Ctrl+Y")
+        self.redo_action.triggered.connect(self.undo_stack.redo)
+    
     def create_menus(self):
+        """Создание меню"""
         menubar = self.menuBar()
         
         # Меню File
-        file_menu = menubar.addMenu("File")
-        
-        # Стандартные действия
-        open_action = QAction("Open", self)
-        open_action.triggered.connect(self.open_file)
-        file_menu.addAction(open_action)
-        
-        save_action = QAction("Save", self)
-        save_action.triggered.connect(self.save_file)
-        file_menu.addAction(save_action)
-        
-        # Подменю Import
-        import_menu = file_menu.addMenu("Import")
-        
-        import_csv = QAction("From CSV", self)
-        import_csv.triggered.connect(lambda: self.open_file('csv'))
-        import_menu.addAction(import_csv)
-        
-        import_excel = QAction("From Excel", self)
-        import_excel.triggered.connect(self.import_excel)
-        import_menu.addAction(import_excel)
-        
-        import_sqlite = QAction("From SQLite", self)
-        import_sqlite.triggered.connect(self.import_sqlite)
-        import_menu.addAction(import_sqlite)
-        
-        # Подменю Export
-        export_menu = file_menu.addMenu("Export")
-        
-        export_csv = QAction("To CSV", self)
-        export_csv.triggered.connect(lambda: self.save_file('csv'))
-        export_menu.addAction(export_csv)
-        
-        export_excel = QAction("To Excel", self)
-        export_excel.triggered.connect(self.export_to_excel)
-        export_menu.addAction(export_excel)
-        
-        export_sqlite = QAction("To SQLite", self)
-        export_sqlite.triggered.connect(self.export_sqlite)
-        export_menu.addAction(export_sqlite)
-        
-        export_md = QAction("To Markdown", self)
-        export_md.triggered.connect(self.export_markdown)
-        export_menu.addAction(export_md)
+        file_menu = menubar.addMenu("&File")
+        file_menu.addAction(self.open_action)
+        file_menu.addAction(self.save_action)
+        file_menu.addAction(self.save_as_action)
         
         # Меню Edit
-        edit_menu = menubar.addMenu("Edit")
-        
-        undo_action = QAction("Undo", self)
-        undo_action.triggered.connect(self.undo_stack.undo)
-        edit_menu.addAction(undo_action)
-        
-        redo_action = QAction("Redo", self)
-        redo_action.triggered.connect(self.undo_stack.redo)
-        edit_menu.addAction(redo_action)
-        
-        # Меню Data
-        data_menu = menubar.addMenu("Data")
-        
-        group_action = QAction("Group Data", self)
-        group_action.triggered.connect(self.show_group_dialog)
-        data_menu.addAction(group_action)
-        
-        # Меню History
-        history_menu = menubar.addMenu("History")
-        show_history = QAction("Show History", self)
-        show_history.triggered.connect(self.show_history)
-        history_menu.addAction(show_history)
-        
-        # Меню Tools
-        tools_menu = menubar.addMenu("Tools")
-        compare_tables = QAction("Compare Tables", self)
-        compare_tables.triggered.connect(self.compare_tables)
-        tools_menu.addAction(compare_tables)
+        edit_menu = menubar.addMenu("&Edit")
+        edit_menu.addAction(self.undo_action)
+        edit_menu.addAction(self.redo_action)
     
     def create_toolbars(self):
+        """Создание панелей инструментов"""
         toolbar = QToolBar("Main Toolbar")
         self.addToolBar(toolbar)
         
-        # Добавление действий на панель инструментов
-        open_action = QAction(QIcon.fromTheme("document-open"), "Open", self)
-        open_action.triggered.connect(self.open_file)
-        toolbar.addAction(open_action)
-        
-        save_action = QAction(QIcon.fromTheme("document-save"), "Save", self)
-        save_action.triggered.connect(self.save_file)
-        toolbar.addAction(save_action)
+        toolbar.addAction(self.open_action)
+        toolbar.addAction(self.save_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self.undo_action)
+        toolbar.addAction(self.redo_action)
     
     def setup_delegates(self):
+        """Настройка делегатов для таблицы"""
         self.multi_line_delegate = MultiLineDelegate()
         self.view.setItemDelegateForColumn(2, self.multi_line_delegate)
     
-    def open_file(self, file_type='csv'):
-        if file_type == 'csv':
-            filename, _ = QFileDialog.getOpenFileName(
-                self, "Open CSV File", "", "CSV Files (*.csv);;All Files (*)"
-            )
-            if filename:
-                self.file_io.load_csv(filename)
-                self.history.take_snapshot(f"Opened file: {filename}")
+    # Основные методы работы с файлами
+    def open_file(self):
+        """Открытие файла"""
+        if self.file_io.open_file(self):
+            self.status_bar.showMessage(f"Opened: {self.file_io.current_file}", 3000)
     
-    def save_file(self, file_type='csv'):
-        if file_type == 'csv':
-            filename, _ = QFileDialog.getSaveFileName(
-                self, "Save CSV File", "", "CSV Files (*.csv);;All Files (*)"
-            )
-            if filename:
-                self.file_io.save_csv(filename)
+    def save_file(self):
+        """Сохранение файла"""
+        if self.file_io.save_file(self, self.get_model_data()):
+            self.undo_stack.setClean()
+            self.status_bar.showMessage(f"Saved: {self.file_io.current_file}", 3000)
+            return True
+        return False
     
-    def import_excel(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "Import Excel", "", "Excel Files (*.xlsx)"
+    def save_file_as(self):
+        """Сохранение файла с выбором имени"""
+        if self.file_io.save_file_as(self, self.get_model_data()):
+            self.undo_stack.setClean()
+            self.status_bar.showMessage(f"Saved as: {self.file_io.current_file}", 3000)
+            return True
+        return False
+    
+    def get_model_data(self):
+        """Получение данных из модели"""
+        return [
+            [self.model.data(self.model.index(row, col)) or ""
+             for col in range(self.model.columnCount())]
+            for row in range(self.model.rowCount())
+        ]
+    
+    def load_data(self, data):
+        """Загрузка данных в модель"""
+        self.model.clear()
+        
+        if not data:
+            return
+            
+        rows = len(data)
+        cols = len(data[0]) if data else 0
+        
+        self.model.setRowCount(rows)
+        self.model.setColumnCount(cols)
+        
+        for row_idx, row in enumerate(data):
+            for col_idx, value in enumerate(row):
+                item = QStandardItem(str(value) if value is not None else "")
+                self.model.setItem(row_idx, col_idx, item)
+    
+    # Обработчики событий
+    def closeEvent(self, event):
+        """Обработка закрытия окна"""
+        if not self.undo_stack or self.undo_stack.isClean():
+            event.accept()
+            return
+            
+        reply = QMessageBox.question(
+            self,
+            "Unsaved Changes",
+            "You have unsaved changes. Save before closing?",
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+            QMessageBox.Save
         )
-        if filename:
-            if self.file_io.import_excel(filename):
-                self.history.take_snapshot(f"Imported from Excel: {filename}")
-                self.audit_log.log(
-                    "import_excel", 
-                    {"file": filename}
-                )
-    
-    def export_to_excel(self):
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Export Excel", "", "Excel Files (*.xlsx)"
-        )
-        if filename:
-            if self.excel_exporter.export(filename):
-                self.audit_log.log(
-                    "export_excel", 
-                    {"file": filename}
-                )
-    
-    def export_markdown(self):
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Export Markdown", "", "Markdown Files (*.md);;All Files (*)"
-        )
-        if filename:
-            # Реализация экспорта в Markdown
-            pass
-    
-    def import_sqlite(self):
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "Import SQLite", "", "SQLite Databases (*.db *.sqlite)"
-        )
-        if filename:
-            table_name, ok = QInputDialog.getText(
-                self, "Select Table", "Enter table name:"
-            )
-            if ok and table_name:
-                if self.file_io.import_sqlite(filename, table_name):
-                    self.history.take_snapshot(f"Imported from SQLite: {table_name}")
-    
-    def export_sqlite(self):
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Export SQLite", "", "SQLite Databases (*.db *.sqlite)"
-        )
-        if filename:
-            table_name, ok = QInputDialog.getText(
-                self, "Table Name", "Enter table name for export:"
-            )
-            if ok and table_name:
-                if self.file_io.export_sqlite(filename, table_name):
-                    self.audit_log.log(
-                        "export_sqlite", 
-                        {"file": filename, "table": table_name}
-                    )
-    
-    def show_group_dialog(self):
-        headers = [self.model.headerData(col, Qt.Horizontal) or f"Column {col}" 
-                  for col in range(self.model.columnCount())]
-        dialog = GroupDialog(headers, self)
-        if dialog.exec_():
-            selections = dialog.get_selections()
-            # Применяем группировку
-            result = self.data_ops.group_data(
-                selections['group_column'],
-                selections['aggregations']
-            )
-            # Показываем результат
-            QMessageBox.information(
-                self, 
-                "Grouping Result", 
-                f"Data grouped by {selections['group_column']}\n"
-                f"Found {len(result)} groups"
-            )
-            self.audit_log.log(
-                "group_data", 
-                selections
-            )
-    
-    def show_history(self):
-        dialog = HistoryBrowserDialog(self.history, self)
-        if dialog.exec_():
-            selected = dialog.get_selected_snapshot()
-            self.history.restore_snapshot(selected)
-    
-    def compare_tables(self):
-        dialog = TableComparisonDialog(self.model, self)
-        if dialog.exec_():
-            # Обработка результатов сравнения
-            pass
-    
-    def autosave(self):
-        data = self.history._get_model_data()
-        try:
-            with open("autosave.json", "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Autosave failed: {e}")
-    
-    def load_settings(self):
-        # Здесь будет загрузка настроек
-        pass
-    
-    def init_connections(self):
-        self.model.dataChanged.connect(self.on_data_changed)
+        
+        if reply == QMessageBox.Save:
+            if self.save_file():
+                event.accept()
+            else:
+                event.ignore()
+        elif reply == QMessageBox.Discard:
+            event.accept()
+        else:
+            event.ignore()
     
     def on_data_changed(self):
-        self.status_bar.showMessage("Data changed")
+        """Обработка изменения данных"""
+        self.status_bar.showMessage("Data changed", 2000)
         self.history.take_snapshot("Data edit")
+    
+    def on_undo_stack_changed(self):
+        """Обновление состояния undo/redo"""
+        self.undo_action.setEnabled(self.undo_stack.canUndo())
+        self.redo_action.setEnabled(self.undo_stack.canRedo())
+    
+    def autosave(self):
+        """Автоматическое сохранение"""
+        if not self.undo_stack.isClean():
+            data = self.get_model_data()
+            try:
+                with open("autosave.json", "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=4)
+            except Exception as e:
+                print(f"Autosave failed: {e}")

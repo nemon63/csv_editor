@@ -4,26 +4,19 @@ from PyQt5.QtGui import QStandardItem
 from .base_model import UndoableStandardItemModel # Добавлен импорт
 
 class EditCellCommand(QUndoCommand):
-    def __init__(self, model: UndoableStandardItemModel, index, oldValue, newValue):
-        super().__init__("Edit Cell")
+    def __init__(self, model, index, old_value, new_value):
+        super().__init__()
         self.model = model
-        self.pIndex = QPersistentModelIndex(index)
-        self.oldValue = oldValue
-        self.newValue = newValue
+        self.index = index
+        self.old_value = old_value
+        self.new_value = new_value
+        self.setText(f"Edit cell ({index.row()}, {index.column()})")
 
     def undo(self):
-        if self.pIndex.isValid():
-            row = self.pIndex.row()
-            col = self.pIndex.column()
-            index = self.model.index(row, col)
-            self.model.setData(index, self.oldValue, Qt.EditRole)  # Упростили вызов
+        self.model.setData(self.index, self.old_value)
 
     def redo(self):
-        if self.pIndex.isValid():
-            row = self.pIndex.row()
-            col = self.pIndex.column()
-            index = self.model.index(row, col)
-            self.model.setData(index, self.newValue, Qt.EditRole)  # Упростили вызов
+        self.model.setData(self.index, self.new_value)
 
 class RemoveColumnCommand(QUndoCommand):
     def __init__(self, model, column, description="Remove Column"):

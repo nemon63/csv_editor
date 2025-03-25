@@ -7,10 +7,91 @@ from openpyxl import Workbook
 import sqlite3
 import markdown
 from pathlib import Path
+import csv
+from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtCore import QObject, pyqtSignal
 
-class FileIOController:
-    def __init__(self, model):
-        self.model = model
+class FileIOController(QObject):
+    file_loaded = pyqtSignal(list)
+    file_saved = pyqtSignal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)  # Передаём parent в QObject
+        self.current_file = None
+        self.model = None  # Добавляем атрибут model
+
+
+    def open_file(self, parent_widget):
+        filename, _ = QFileDialog.getOpenFileName(
+            parent_widget,
+            "Open CSV File",
+            "",
+            "CSV Files (*.csv);;Excel Files (*.xlsx *.xls);;All Files (*)"
+        )
+        
+        if not filename:
+            return False
+            
+        self.current_file = filename
+        
+        try:
+            if filename.endswith('.csv'):
+                with open(filename, 'r', encoding='utf-8') as file:
+                    reader = csv.reader(file)
+                    data = list(reader)
+            else:
+                # Для Excel потребуется openpyxl
+                from openpyxl import load_workbook
+                wb = load_workbook(filename)
+                sheet = wb.active
+                data = []
+                for row in sheet.iter_rows(values_only=True):
+                    data.append(list(row))
+            
+            self.file_loaded.emit(data)
+            return True
+        except Exception as e:
+            QMessageBox.critical(parent_widget, "Error", f"Failed to open file:\n{str(e)}")
+            return False
+
+    def save_file(self, parent_widget, data):
+        if not self.current_file:
+            return self.save_file_as(parent_widget, data)
+            
+        try:
+            if self.current_file.endswith('.csv'):
+                with open(self.current_file, 'w', encoding='utf-8', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerows(data)
+            else:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                for row in data:
+                    ws.append(row)
+                wb.save(self.current_file)
+            
+            self.file_saved.emit(True)
+            return True
+        except Exception as e:
+            QMessageBox.critical(parent_widget, "Error", f"Failed to save file:\n{str(e)}")
+            return False
+
+    def save_file_as(self, parent_widget, data):
+        filename, _ = QFileDialog.getSaveFileName(
+            parent_widget,
+            "Save File As",
+            self.current_file if self.current_file else "",
+            "CSV Files (*.csv);;Excel Files (*.xlsx *.xls);;All Files (*)"
+        )
+        
+        if not filename:
+            return False
+            
+        self.current_file = filename
+        return self.save_file(parent_widget, data)
+    
+
         
     def load_csv(self, filename, delimiter=','):
         try:
