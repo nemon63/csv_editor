@@ -1,0 +1,16 @@
+[
+  {
+    "timestamp": "2025-03-25T15:21:53.032318",
+    "action": "import_excel",
+    "details": {
+      "file": "C:/Users/dserovatov/Google \u0414\u0438\u0441\u043a/\u0411\u043b\u0430\u043d\u043a \u043c\u043e\u0442\u0438\u0432\u0430\u0446\u0438\u044f - Q1_2023 \u041c\u043e\u0434\u0435\u043b\u0435\u0440\u044b.xlsx"
+    }
+  },
+  {
+    "timestamp": "2025-03-25T15:27:35.885729",
+    "action": "import_excel",
+    "details": {
+      "file": "C:/Users/dserovatov/Documents/\u0410\u0442\u043b\u0430\u0441.xlsx"
+    }
+  }
+]
